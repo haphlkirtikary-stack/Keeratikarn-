@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Math Quest: เกาะเลขมหัศจรรย์ (Air Gesture AR)</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Mali:wght@500;700&display=swap');
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Mali', cursive, sans-serif;
+            background-color: #0f172a;
+            color: #333;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* หน้าจอหลัก */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            max-width: 900px;
+            max-height: 650px;
+            background: #000;
+            border-radius: 24px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 8px solid #FFD700;
+        }
+
+        /* วิดีโอกล้อง AR Real-time */
+        #webcam-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* กระจกเงา */
+            z-index: 1;
+        }
+
+        /* Canvas สำหรับคำนวณการเคลื่อนไหวของมือ */
+        #motion-canvas {
+            display: none;
+        }
+
+        /* เลเยอร์ฉาก AR */
+        .ar-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .ar-corner {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border: 5px solid rgba(255, 255, 255, 0.85);
+        }
+
+        .top-left { top: 20px; left: 20px; border-right: 0; border-bottom: 0; border-radius: 12px 0 0 0; }
+        .top-right { top: 20px; right: 20px; border-left: 0; border-bottom: 0; border-radius: 0 12px 0 0; }
+        .bottom-left { bottom: 100px; left: 20px; border-right: 0; border-top: 0; border-radius: 0 0 0 12px; }
+        .bottom-right { bottom: 100px; right: 20px; border-left: 0; border-top: 0; border-radius: 0 0 12px 0; }
+
+        .ar-badge {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            animation: pulse 1.5s infinite;
+        }
+
+        .rec-dot {
+            width: 10px;
+            height: 10px;
+            background-color: white;
+            border-radius: 50%;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+
+        /* ส่วนหัวและคะแนน */
+        .header {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(8px);
+            border-bottom: 4px solid #FFC0CB;
+        }
+
+        .title-box h1 {
+            font-size: 20px;
+            color: #FF4500;
+            text-shadow: 1px 1px 0px #FFF;
+        }
+
+        .stats-box {
+            display: flex;
+            gap: 15px;
+        }
+
+        .stat-item {
+            background: #FFF;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 18px;
+            box-shadow: 0 4px 0 #DDD;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-score { color: #FF8C00; }
+        .stat-stars { color: #FFD700; }
+
+        /* แถบโจทย์ */
+        .quest-banner {
+            position: relative;
+            z-index: 10;
+            margin: 10px auto;
+            background: rgba(255, 255, 255, 0.95);
+            border: 4px solid #FF69B4;
+            border-radius: 20px;
+            padding: 8px 20px;
+            text-align: center;
+            max-width: 90%;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.2);
+            animation: bounceIn 0.5s ease;
+        }
+
+        .quest-text {
+            font-size: 22px;
+            font-weight: 700;
+            color: #4B0082;
+        }
+
+        .quest-subtext {
+            font-size: 15px;
+            color: #D2143A;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+
+        /* พื้นที่ฉาก AR ลอยวัตถุ */
+        #ar-world {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            overflow: hidden;
+            z-index: 8;
+        }
+
+        /* วัตถุใน AR */
+        .ar-object {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            animation: float 3s infinite ease-in-out;
+            transition: all 0.2s ease;
+        }
+
+        .object-icon {
+            font-size: 65px;
+            filter: drop-shadow(0 8px 6px rgba(0,0,0,0.4));
+        }
+
+        /* วงกลม ตรวจจับการโบกมือ */
+        .motion-sensor-ring {
+            position: absolute;
+            width: 90px;
+            height: 90px;
+            border: 4px dashed #00FF66;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: rotateRing 4s linear infinite;
+            pointer-events: none;
+        }
+
+        .motion-charging {
+            border-color: #FFD700 !important;
+            background: rgba(255, 215, 0, 0.25);
+            scale: 1.1;
+        }
+
+        .object-tag {
+            background: #00E676;
+            color: #000;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            border: 2px solid #FFF;
+            box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+            margin-top: -5px;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+            50% { transform: translate(-50%, -50%) translateY(-15px); }
+        }
+
+        @keyframes rotateRing {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        /* แถบคลังเก็บด้านล่าง */
+        .dock {
+            position: relative;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(8px);
+            padding: 10px 16px;
+            border-top: 4px solid #3CB371;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .inventory-box {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #E8F5E9;
+            border: 3px dashed #4CAF50;
+            border-radius: 16px;
+            padding: 6px 12px;
+            min-height: 68px;
+            overflow-x: auto;
+        }
+
+        .inventory-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #2E7D32;
+            white-space: nowrap;
+        }
+
+        .inventory-items {
+            display: flex;
+            gap: 6px;
+            flex-wrap: nowrap;
+        }
+
+        .inventory-item {
+            font-size: 30px;
+            background: #FFF;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 3px 0 #A5D6A7;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .btn {
+            font-family: 'Mali', cursive;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            box-shadow: 0 5px 0 rgba(0,0,0,0.2);
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .btn-check { background: #4CAF50; color: white; box-shadow: 0 5px 0 #2E7D32; }
+        .btn-next { background: #FF9800; color: white; box-shadow: 0 5px 0 #E65100; }
+        .btn-cam { background: #2196F3; color: white; box-shadow: 0 5px 0 #0D47A1; }
+
+        /* ตัวเลขเด้งลอย */
+        .number-popup {
+            position: absolute;
+            font-size: 36px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+            pointer-events: none;
+            z-index: 100;
+            animation: floatUp 1s forwards ease-out;
+        }
+
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+            50% { transform: translate(-50%, -100%) scale(1.3); }
+            100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
+        }
+
+        /* ป๊อปอัปผลลัพธ์ */
+        .modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 150;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal.active { opacity: 1; pointer-events: auto; }
+
+        .modal-card {
+            background: #FFF;
+            border-radius: 24px;
+            padding: 24px;
+            text-align: center;
+            max-width: 80%;
+            border: 6px solid #FFD700;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            transform: scale(0.7);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .modal.active .modal-card { transform: scale(1); }
+        .modal-icon { font-size: 70px; margin-bottom: 10px; }
+        .modal-title { font-size: 26px; color: #FF4500; margin-bottom: 8px; }
+        .modal-desc { font-size: 18px; color: #555; margin-bottom: 20px; }
+
+        #confetti-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 140;
+        }
+
+        /* หน้าต่างเริ่มต้นขออนุญาตเปิดกล้อง */
+        .start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .start-overlay h2 { font-size: 28px; color: #FFD700; margin-bottom: 12px; }
+        .start-overlay p { font-size: 18px; color: #E2E8F0; margin-bottom: 24px; max-width: 500px; }
+
+        @media (max-width: 600px) {
+            .quest-text { font-size: 16px; }
+            .quest-subtext { font-size: 13px; }
+            .btn { font-size: 14px; padding: 8px 12px; }
+            .object-icon { font-size: 50px; }
+            .header h1 { font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- วิดีโอกล้องหน้า -->
+        <video id="webcam-video" autoplay playsinline muted></video>
+        <canvas id="motion-canvas"></canvas>
+
+        <!-- พลุเฉลิมฉลอง -->
+        <canvas id="confetti-canvas"></canvas>
+
+        <!-- หน้าเปิดกล้องครั้งแรก -->
+        <div class="start-overlay" id="start-overlay">
+            <h2>👋 เล่นเกมด้วยการโบกมือ!</h2>
+            <p>เกมนี้ไม่ต้องใช้นิ้วแตะหน้าจอ เพียงแค่เปิดกล้อง แล้ว<b>ยื่นมือโบกผ่านผลไม้บนอากาศ</b> เพื่อเก็บเข้าคลังได้เลย!</p>
+            <button class="btn btn-cam" id="btn-start-cam" style="font-size: 22px; padding: 12px 28px;">📷 เปิดกล้องเริ่มเล่นเลย!</button>
+        </div>
+
+        <!-- กรอบ AR -->
+        <div class="ar-overlay">
+            <div class="ar-corner top-left"></div>
+            <div class="ar-corner top-right"></div>
+            <div class="ar-corner bottom-left"></div>
+            <div class="ar-corner bottom-right"></div>
+            <div class="ar-badge">
+                <div class="rec-dot"></div> AIR MOTION AR
+            </div>
+        </div>
+
+        <!-- แถบส่วนหัว -->
+        <div class="header">
+            <div class="title-box">
+                <h1>🏝️ Math Quest (Air Gesture)</h1>
+            </div>
+            <div class="stats-box">
+                <div class="stat-item stat-score">
+                    🏆 <span id="score-val">0</span>
+                </div>
+                <div class="stat-item stat-stars">
+                    ⭐ <span id="stars-val">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- แถบโจทย์ -->
+        <div class="quest-banner">
+            <div class="quest-text" id="quest-title">กำลังโหลดโจทย์...</div>
+            <div class="quest-subtext" id="quest-desc">👋 โบกมือผ่านผลไม้ในกล้องเพื่อเก็บเข้าคลัง!</div>
+        </div>
+
+        <!-- พื้นที่ฉาก AR -->
+        <div id="ar-world"></div>
+
+        <!-- แถบแสดงคลังเก็บ และปุ่มกด -->
+        <div class="dock">
+            <button class="btn btn-cam" id="btn-reset-quest" title="เริ่มใหม่">🔄 ข้อใหม่</button>
+            <div class="inventory-box">
+                <span class="inventory-title">คลังเก็บ:</span>
+                <div class="inventory-items" id="inventory-list"></div>
+            </div>
+            <button class="btn btn-check" id="btn-check">✨ ตรวจคำตอบ</button>
+        </div>
+
+        <!-- ป๊อปอัปผลลัพธ์ -->
+        <div class="modal" id="result-modal">
+            <div class="modal-card">
+                <div class="modal-icon" id="modal-emoji">🎉</div>
+                <div class="modal-title" id="modal-status">ถูกต้องแล้ว!</div>
+                <div class="modal-desc" id="modal-message">เก่งมากเลยคนเก่ง! ได้รับ 10 คะแนน</div>
+                <button class="btn btn-next" style="margin: 0 auto;" id="btn-modal-action">ลุยข้อถัดไป! ➔</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ระบบเสียงสังเคราะห์ Web Audio API
+        class SoundEffects {
+            constructor() {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            playPop() {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+
+            playCount(num) {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const baseFreq = 300 + (num * 35);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playSuccess() {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, index) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.2, this.ctx.currentTime + index * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + index * 0.1 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + index * 0.1);
+                    osc.stop(this.ctx.currentTime + index * 0.1 + 0.3);
+                });
+            }
+
+            playWrong() {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(220, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(110, this.ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            }
+        }
+
+        const sounds = new SoundEffects();
+
+        const ITEM_TYPES = [
+            { name: 'แอปเปิ้ล', icon: '🍎' },
+            { name: 'ส้ม', icon: '🍊' },
+            { name: 'กล้วย', icon: '🍌' },
+            { name: 'สตอเบอรี่', icon: '🍓' },
+            { name: 'ดาว', icon: '⭐' },
+            { name: 'ขนมปัง', icon: '🍞' }
+        ];
+
+        const ENEMY_TYPES = [
+            { name: 'ซอมบี้นก', icon: '🦅' },
+            { name: 'นกเกเร', icon: '🐦' },
+            { name: 'หนอนน้อย', icon: '🐛' }
+        ];
+
+        let state = {
+            score: 0,
+            stars: 0,
+            mode: 'ADD',
+            targetNumber: 0,
+            currentCount: 0,
+            collectedItems: [],
+            initialCount: 0,
+            subtractedCount: 0,
+            itemIcon: '🍎',
+            enemyIcon: '🦅'
+        };
+
+        const arWorld = document.getElementById('ar-world');
+        const questTitle = document.getElementById('quest-title');
+        const questDesc = document.getElementById('quest-desc');
+        const inventoryList = document.getElementById('inventory-list');
+        const scoreVal = document.getElementById('score-val');
+        const starsVal = document.getElementById('stars-val');
+        const resultModal = document.getElementById('result-modal');
+        const video = document.getElementById('webcam-video');
+        const motionCanvas = document.getElementById('motion-canvas');
+        const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
+
+        let prevFrameData = null;
+        let isCameraActive = false;
+        let arObjectsData = []; // เก็บตำแหน่งและค่าการตรวจจับการเคลื่อนไหว
+
+        // การสร้างระบบ Confetti
+        const confettiCanvas = document.getElementById('confetti-canvas');
+        const ctx = confettiCanvas.getContext('2d');
+        let particles = [];
+
+        function resizeCanvas() {
+            confettiCanvas.width = document.getElementById('game-container').clientWidth;
+            confettiCanvas.height = document.getElementById('game-container').clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function createConfetti() {
+            particles = [];
+            const colors = ['#FF1493', '#00BFFF', '#FFD700', '#32CD32', '#FF4500'];
+            for (let i = 0; i < 60; i++) {
+                particles.push({
+                    x: confettiCanvas.width / 2,
+                    y: confettiCanvas.height / 2,
+                    vx: (Math.random() - 0.5) * 12,
+                    vy: (Math.random() - 0.7) * 12,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    size: Math.random() * 8 + 4,
+                    life: 100
+                });
+            }
+            animateConfetti();
+        }
+
+        function animateConfetti() {
+            ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+            let active = false;
+            particles.forEach(p => {
+                if (p.life > 0) {
+                    active = true;
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.3;
+                    p.life -= 2;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            if (active) requestAnimationFrame(animateConfetti);
+        }
+
+        // ระบบเปิดกล้อง Webcam
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480, facingMode: 'user' },
+                    audio: false
+                });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    motionCanvas.width = 160; // ย่อขนาดเพื่อคำนวณการเคลื่อนไหวรวดเร็ว
+                    motionCanvas.height = 120;
+                    isCameraActive = true;
+                    document.getElementById('start-overlay').style.display = 'none';
+                    generateQuest();
+                    requestAnimationFrame(processMotionLoop);
+                };
+            } catch (err) {
+                alert('ไม่สามารถเปิดกล้องได้ กรุณายินยอมให้เข้าถึงกล้องเพื่อใช้ระบบโบกมือเล่นเกม');
+            }
+        }
+
+        // อัลกอริทึมตรวจจับการเคลื่อนไหวผ่านวิดีโอกล้อง (Motion Detection Algorithm)
+        function processMotionLoop() {
+            if (isCameraActive && video.readyState === video.HAVE_ENOUGH_DATA) {
+                motionCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
+                const currentFrame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+                
+                if (prevFrameData) {
+                    const currData = currentFrame.data;
+                    const prevData = prevFrameData.data;
+
+                    // ตรวจความเคลื่อนไหวในแต่ละวัตถุ
+                    arObjectsData.forEach(obj => {
+                        if (obj.collected) return;
+
+                        // แปลงพิกัดจากหน้าจอหลักไปยังพิกัด Canvas ย่อขนาด (พร้อมกลับด้านกระจก)
+                        const containerRect = arWorld.getBoundingClientRect();
+                        const relX = obj.x / containerRect.width;
+                        const relY = obj.y / containerRect.height;
+
+                        const canvasX = Math.floor((1 - relX) * motionCanvas.width); // Mirror X
+                        const canvasY = Math.floor(relY * motionCanvas.height);
+
+                        const boxSize = 14;
+                        let motionScore = 0;
+
+                        for (let y = canvasY - boxSize; y < canvasY + boxSize; y += 2) {
+                            for (let x = canvasX - boxSize; x < canvasX + boxSize; x += 2) {
+                                if (x >= 0 && x < motionCanvas.width && y >= 0 && y < motionCanvas.height) {
+                                    const index = (y * motionCanvas.width + x) * 4;
+                                    const diffR = Math.abs(currData[index] - prevData[index]);
+                                    const diffG = Math.abs(currData[index + 1] - prevData[index + 1]);
+                                    const diffB = Math.abs(currData[index + 2] - prevData[index + 2]);
+
+                                    if (diffR + diffG + diffB > 75) {
+                                        motionScore++;
+                                    }
+                                }
+                            }
+                        }
+
+                        // หากมีการสะสมความเคลื่อนไหวเกินเกณฑ์ (โบกมือผ่าน)
+                        if (motionScore > 12) {
+                            obj.charge = (obj.charge || 0) + 1;
+                            obj.ringEl.classList.add('motion-charging');
+
+                            if (obj.charge >= 3) { // ตรวจจับต่อเนื่อง 3 เฟรม
+                                obj.collected = true;
+                                if (state.mode === 'ADD') {
+                                    collectItemSuccess(obj);
+                                } else {
+                                    dismissEnemySuccess(obj);
+                                }
+                            }
+                        } else {
+                            obj.charge = Math.max(0, (obj.charge || 0) - 0.5);
+                            if (obj.charge === 0) {
+                                obj.ringEl.classList.remove('motion-charging');
+                            }
+                        }
+                    });
+                }
+                prevFrameData = currentFrame;
+            }
+            requestAnimationFrame(processMotionLoop);
+        }
+
+        // สุ่มสร้างโจทย์
+        function generateQuest() {
+            arWorld.innerHTML = '';
+            inventoryList.innerHTML = '';
+            arObjectsData = [];
+            state.collectedItems = [];
+            state.currentCount = 0;
+            state.subtractedCount = 0;
+
+            state.mode = Math.random() > 0.4 ? 'ADD' : 'SUBTRACT';
+
+            if (state.mode === 'ADD') {
+                const item = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+                state.itemIcon = item.icon;
+                state.targetNumber = Math.floor(Math.random() * 10) + 3;
+
+                questTitle.innerHTML = `สะสม ${state.itemIcon} ให้ได้รวมกัน <span style="color:#FF1493; font-size:28px;">${state.targetNumber}</span> ชิ้น!`;
+                questDesc.innerText = `👋 โบกมือผ่านวงกลมรอบ ${item.name} เพื่อเก็บเข้าคลัง!`;
+
+                const spawnCount = state.targetNumber + Math.floor(Math.random() * 3) + 1;
+                spawnArObjects(spawnCount, state.itemIcon, 'ADD');
+
+            } else {
+                const item = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+                const enemy = ENEMY_TYPES[Math.floor(Math.random() * ENEMY_TYPES.length)];
+                state.itemIcon = item.icon;
+                state.enemyIcon = enemy.icon;
+
+                state.initialCount = Math.floor(Math.random() * 7) + 5;
+                const removeCount = Math.floor(Math.random() * (state.initialCount - 2)) + 1;
+                state.targetNumber = state.initialCount - removeCount;
+
+                questTitle.innerHTML = `มี ${state.itemIcon} อยู่ ${state.initialCount} ชิ้น โดน ${state.enemyIcon} ก่อกวนไป ${removeCount} ตัว!`;
+                questDesc.innerText = `👋 โบกมือผ่าน ${state.enemyIcon} เพื่อไล่ออกไป!`;
+
+                for (let i = 0; i < state.initialCount; i++) {
+                    addInventoryItem(state.itemIcon);
+                    state.collectedItems.push(state.itemIcon);
+                }
+                state.currentCount = state.initialCount;
+
+                spawnArObjects(removeCount, state.enemyIcon, 'SUBTRACT');
+            }
+        }
+
+        // สุ่มสร้างวัตถุบนฉาก AR
+        function spawnArObjects(count, iconSymbol, mode) {
+            const worldWidth = arWorld.clientWidth;
+            const worldHeight = arWorld.clientHeight;
+
+            const cols = 4;
+            const rows = 3;
+            const cellW = worldWidth / cols;
+            const cellH = (worldHeight - 40) / rows;
+
+            let positions = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    positions.push({
+                        x: c * cellW + cellW / 2 + (Math.random() * 20 - 10),
+                        y: r * cellH + cellH / 2 + 30 + (Math.random() * 20 - 10)
+                    });
+                }
+            }
+
+            positions.sort(() => Math.random() - 0.5);
+
+            for (let i = 0; i < count; i++) {
+                if (i >= positions.length) break;
+
+                const posX = positions[i].x;
+                const posY = positions[i].y;
+
+                const objEl = document.createElement('div');
+                objEl.className = 'ar-object';
+                objEl.style.left = `${posX}px`;
+                objEl.style.top = `${posY}px`;
+
+                const ringEl = document.createElement('div');
+                ringEl.className = 'motion-sensor-ring';
+
+                objEl.innerHTML = `
+                    <div class="object-icon">${iconSymbol}</div>
+                    <div class="object-tag">${mode === 'ADD' ? 'โบกมือเก็บ' : 'โบกมือไล่'}</div>
+                `;
+                objEl.appendChild(ringEl);
+
+                // หากเด็กอยากใช้นิ้วแตะสำรองก็ยังทำได้
+                objEl.addEventListener('click', () => {
+                    const objData = arObjectsData.find(d => d.el === objEl);
+                    if (objData && !objData.collected) {
+                        objData.collected = true;
+                        if (mode === 'ADD') collectItemSuccess(objData);
+                        else dismissEnemySuccess(objData);
+                    }
+                });
+
+                arWorld.appendChild(objEl);
+
+                arObjectsData.push({
+                    el: objEl,
+                    ringEl: ringEl,
+                    x: posX,
+                    y: posY,
+                    icon: iconSymbol,
+                    collected: false,
+                    charge: 0
+                });
+            }
+        }
+
+        // เมื่อการโบกมือสัมผัสเก็บวัตถุสำเร็จ
+        function collectItemSuccess(objData) {
+            sounds.playPop();
+            state.currentCount++;
+            sounds.playCount(state.currentCount);
+
+            showNumberParticle(`+1 (${state.currentCount})`, objData.x, objData.y);
+            addInventoryItem(objData.icon);
+            state.collectedItems.push(objData.icon);
+
+            objData.el.style.transform = 'translate(-50%, -50%) scale(0)';
+            setTimeout(() => objData.el.remove(), 250);
+        }
+
+        // เมื่อการโบกมือสัมผัสไล่ศัตรูสำเร็จ
+        function dismissEnemySuccess(objData) {
+            sounds.playPop();
+            state.subtractedCount++;
+            state.currentCount--;
+            sounds.playCount(state.currentCount);
+
+            showNumberParticle(`เหลือ ${state.currentCount}`, objData.x, objData.y);
+            removeInventoryItem();
+
+            objData.el.style.transition = 'all 0.4s ease-in';
+            objData.el.style.transform = 'translate(-50%, -200px) scale(1.5)';
+            objData.el.style.opacity = '0';
+            setTimeout(() => objData.el.remove(), 400);
+        }
+
+        function addInventoryItem(icon) {
+            const itemEl = document.createElement('div');
+            itemEl.className = 'inventory-item';
+            itemEl.innerText = icon;
+            inventoryList.appendChild(itemEl);
+            inventoryList.scrollLeft = inventoryList.scrollWidth;
+        }
+
+        function removeInventoryItem() {
+            if (inventoryList.lastElementChild) {
+                const item = inventoryList.lastElementChild;
+                item.style.transform = 'scale(0)';
+                setTimeout(() => item.remove(), 200);
+            }
+        }
+
+        function showNumberParticle(text, x, y) {
+            const particle = document.createElement('div');
+            particle.className = 'number-popup';
+            particle.innerText = text;
+            particle.style.left = `${x}px`;
+            particle.style.top = `${y}px`;
+            arWorld.appendChild(particle);
+
+            setTimeout(() => particle.remove(), 1000);
+        }
+
+        // ตรวจคำตอบ
+        function checkAnswer() {
+            if (state.currentCount === state.targetNumber) {
+                sounds.playSuccess();
+                createConfetti();
+                state.score += 10;
+                state.stars += 1;
+                scoreVal.innerText = state.score;
+                starsVal.innerText = state.stars;
+
+                showModal(
+                    '🎉 เก่งมากเลย!',
+                    `คำตอบคือ <b>${state.targetNumber}</b> ถูกต้องแล้วครับ!`,
+                    '🌟 รับ 10 คะแนน',
+                    'ลุยข้อถัดไป ➔'
+                );
+            } else {
+                sounds.playWrong();
+                let hint = '';
+                if (state.mode === 'ADD') {
+                    if (state.currentCount < state.targetNumber) {
+                        hint = `ตอนนี้มีแค่ ${state.currentCount} ชิ้น ยังขาดอีก ${state.targetNumber - state.currentCount} ชิ้นนะ!`;
+                    } else {
+                        hint = `ตอนนี้มีตั้ง ${state.currentCount} ชิ้น เกินมา ${state.currentCount - state.targetNumber} ชิ้นแล้ว ลองโบกมือเริ่มใหม่นะ!`;
+                    }
+                } else {
+                    hint = `ลองนับดูใหม่นะ เหลืออยู่ ${state.currentCount} ชิ้น รึเปล่า?`;
+                }
+
+                showModal(
+                    'เกือบถูกแล้ว! 🤔',
+                    hint,
+                    '💡 ลองใหม่อีกทีคนเก่ง!',
+                    'ตกลง'
+                );
+            }
+        }
+
+        function showModal(title, desc, statusText, btnText) {
+            document.getElementById('modal-status').innerText = title;
+            document.getElementById('modal-message').innerHTML = desc;
+            document.getElementById('btn-modal-action').innerText = btnText;
+            resultModal.classList.add('active');
+        }
+
+        function hideModal() {
+            resultModal.classList.remove('active');
+        }
+
+        // ปุ่มและ Event สั่งงาน
+        document.getElementById('btn-start-cam').addEventListener('click', startCamera);
+        document.getElementById('btn-check').addEventListener('click', checkAnswer);
+        document.getElementById('btn-reset-quest').addEventListener('click', () => {
+            sounds.playPop();
+            generateQuest();
+        });
+
+        document.getElementById('btn-modal-action').addEventListener('click', () => {
+            hideModal();
+            if (state.currentCount === state.targetNumber) {
+                generateQuest();
+            }
+        });
+    </script>
+</body>
+</html>
